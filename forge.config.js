@@ -2,9 +2,6 @@ const { FusesPlugin } = require('@electron-forge/plugin-fuses');
 const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
-  packagerConfig: {
-    asar: true,
-  },
   rebuildConfig: {},
   makers: [
     {
@@ -24,6 +21,15 @@ module.exports = {
       config: {},
     },
   ],
+  packagerConfig: {
+    asar: true,
+    extraResource: [
+      'src/python/venv',
+      'src/python/data',
+      'src/python/facial_analysis.py',
+      'src/python/worker.py',
+    ]
+  },
   plugins: [
     {
       name: '@electron-forge/plugin-auto-unpack-natives',

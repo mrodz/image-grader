@@ -1,6 +1,7 @@
 import { app, BrowserWindow, protocol } from 'electron'
 import path from 'path'
 import { registerIpcHandlers, registerProtocol } from './ipc-handlers'
+import { pythonBridge } from './python-bridge'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -38,9 +39,18 @@ app.whenReady().then(() => {
   registerIpcHandlers()
   createWindow()
 
+  // Start the Python worker.  Failures are logged but must not prevent
+  // the app from opening — the UI degrades gracefully when the worker
+  // is unavailable.
+  pythonBridge.start()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  pythonBridge.shutdown()
 })
 
 app.on('window-all-closed', () => {

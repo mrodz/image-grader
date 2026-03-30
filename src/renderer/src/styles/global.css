@@ -698,3 +698,346 @@ input:focus {
   gap: 16px;
   color: var(--text2);
 }
+
+/* ---- Face analysis badge (RatingScreen) ---- */
+.face-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+.face-badge-pending {
+  background: var(--bg3);
+  border-color: var(--border);
+  color: var(--text2);
+}
+
+.face-badge-processing {
+  background: #1a2a3a;
+  border-color: #2a4a6a;
+  color: #6aa1ff;
+}
+
+.face-badge-done {
+  background: #1a2a1a;
+  border-color: #2a4a2a;
+  color: var(--text);
+}
+
+.face-badge-error {
+  background: #2a1a1a;
+  border-color: #4a2a2a;
+  color: var(--danger);
+  cursor: default;
+}
+
+.face-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text2);
+  flex-shrink: 0;
+}
+
+.face-badge-dot-processing {
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.face-badge-dot-error {
+  background: var(--danger);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.face-badge-sex {
+  font-size: 11px;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.face-badge-sex-male {
+  background: #1a3a5a;
+  color: #6ab4ff;
+}
+
+.face-badge-sex-female {
+  background: #3a1a3a;
+  color: #f4a0f4;
+}
+
+.face-badge-sex-unknown {
+  background: var(--bg3);
+  color: var(--text2);
+}
+
+.face-badge-label {
+  font-weight: 500;
+}
+
+.face-badge-conf {
+  color: var(--text2);
+  font-weight: 400;
+}
+
+.face-badge-sep {
+  color: var(--border);
+}
+
+.face-badge-detected {
+  color: var(--success);
+}
+
+.face-badge-noface {
+  color: var(--text2);
+}
+
+.face-badge-action {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text2);
+  font-size: 11px;
+  padding: 1px 7px;
+  margin-left: 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.face-badge-action:hover {
+  color: var(--text);
+  border-color: #555;
+}
+
+.face-badge-reprocess {
+  color: #555;
+}
+
+/* ---- Facial analysis — SettingsScreen ---- */
+.worker-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.worker-ready {
+  color: var(--success);
+}
+
+.worker-not-ready {
+  color: var(--text2);
+}
+
+.worker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.worker-dot-ready {
+  background: var(--success);
+}
+
+.worker-dot-off {
+  background: #444;
+}
+
+.facial-stats {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.facial-stat-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  min-width: 64px;
+}
+
+.facial-stat-success { background: #1e3a1e; }
+.facial-stat-danger  { background: #3a1e1e; }
+.facial-stat-muted   { background: var(--bg3); }
+.facial-stat-accent  { background: #1e2a3a; }
+
+.facial-stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.facial-stat-success .facial-stat-value { color: var(--success); }
+.facial-stat-danger  .facial-stat-value { color: var(--danger); }
+.facial-stat-muted   .facial-stat-value { color: var(--text); }
+.facial-stat-accent  .facial-stat-value { color: var(--accent); }
+
+.facial-stat-label {
+  font-size: 11px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.facial-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.batch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.batch-progress-bar {
+  height: 6px;
+  background: var(--bg3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.batch-progress-label {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.facial-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.facial-filter-label {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.facial-filter-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.facial-filter-btn:hover {
+  color: var(--text);
+}
+
+.facial-filter-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.facial-table-wrap {
+  margin-top: 10px;
+}
+
+.facial-table {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.facial-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.facial-row:last-child {
+  border-bottom: none;
+}
+
+.facial-row-done   { background: #111a11; }
+.facial-row-error  { background: #1a1111; }
+.facial-row-pending, .facial-row-processing { background: transparent; }
+
+.facial-row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.facial-row-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.status-done      { color: var(--success); }
+.status-error     { color: var(--danger); }
+.status-pending   { color: var(--text2); }
+.status-processing { color: var(--accent); }
+
+.facial-row-sex {
+  font-size: 11px;
+  color: var(--text2);
+  flex-shrink: 0;
+  min-width: 44px;
+}
+
+.facial-row-face {
+  font-size: 11px;
+  color: var(--text2);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
+.facial-row-error {
+  font-size: 11px;
+  color: var(--danger);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facial-table-trunc {
+  font-size: 12px;
+  color: var(--text2);
+  padding: 8px 10px;
+  text-align: center;
+}

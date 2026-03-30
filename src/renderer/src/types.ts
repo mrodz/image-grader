@@ -7,6 +7,15 @@ declare global {
   }
 }
 
-export type { AppSettings, Profile, StudyState, RatingSavePayload } from '../../shared/types'
+export type {
+  AppSettings,
+  Profile,
+  StudyState,
+  RatingSavePayload,
+  FacialData,
+  FacialProgressEvent,
+  SexLabel,
+  ProcessingStatus
+} from '../../shared/types'
 
 export type Screen = 'profiles' | 'rating' | 'settings'
