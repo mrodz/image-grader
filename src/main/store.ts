@@ -171,6 +171,38 @@ export function resetFacialRecord(filename: string): void {
   saveFacialStore(store)
 }
 
+/** Reset multiple records back to pending so they can be reprocessed. */
+export function resetFacialRecords(filenames: string[]): void {
+  const store = getFacialStore()
+  for (const filename of filenames) {
+    if (store.records[filename]) {
+      store.records[filename] = makePendingRecord(filename)
+    }
+  }
+  saveFacialStore(store)
+}
+
+/** Remove ratings for specific images from every profile. */
+export function deleteRatingsForImages(filenames: string[]): void {
+  const data = getProfilesData()
+  const set = new Set(filenames)
+  for (const profile of data.profiles) {
+    for (const fn of set) {
+      delete profile.ratings[fn]
+    }
+  }
+  saveProfilesData(data)
+}
+
+/** Overwrite a single rating value for a given profile. */
+export function updateRatingValue(profileId: string, filename: string, value: number): void {
+  const data = getProfilesData()
+  const profile = data.profiles.find((p) => p.id === profileId)
+  if (!profile) return
+  profile.ratings[filename] = value
+  saveProfilesData(data)
+}
+
 /**
  * Ensure every filename in the image list has at least a pending record.
  * Returns the number of newly inserted records.

@@ -3,6 +3,7 @@ import type { Profile, AppSettings, StudyState, Screen, FacialData, FacialProgre
 import ProfileScreen from './screens/ProfileScreen'
 import RatingScreen from './screens/RatingScreen'
 import SettingsScreen from './screens/SettingsScreen'
+import DataBrowserScreen from './screens/DataBrowserScreen'
 import { useWorkerStatus } from './useWorkerStatus'
 
 export default function App() {
@@ -93,13 +94,21 @@ export default function App() {
               {activeProfile.name}
             </span>
           )}
-          {screen !== 'settings' && (
-            <button className="btn-ghost" onClick={() => setScreen('settings')}>
-              Settings
-            </button>
+          {screen !== 'settings' && screen !== 'data' && (
+            <>
+              <button className="btn-ghost" onClick={() => setScreen('data')}>
+                Data
+              </button>
+              <button className="btn-ghost" onClick={() => setScreen('settings')}>
+                Settings
+              </button>
+            </>
           )}
-          {screen === 'settings' && (
-            <button className="btn-ghost" onClick={() => setScreen(activeProfile ? 'rating' : 'profiles')}>
+          {(screen === 'settings' || screen === 'data') && (
+            <button
+              className="btn-ghost"
+              onClick={() => setScreen(activeProfile ? 'rating' : 'profiles')}
+            >
               ← Back
             </button>
           )}
@@ -148,6 +157,15 @@ export default function App() {
               setStudy(st)
               refreshStudy()
             }}
+            onFacialDataChange={setFacialData}
+          />
+        )}
+        {screen === 'data' && (
+          <DataBrowserScreen
+            settings={settings}
+            study={study}
+            facialData={facialData}
+            workerReady={workerReady}
             onFacialDataChange={setFacialData}
           />
         )}

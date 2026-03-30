@@ -18,4 +18,4 @@ export type {
   ProcessingStatus
 } from '../../shared/types'
 
-export type Screen = 'profiles' | 'rating' | 'settings'
+export type Screen = 'profiles' | 'rating' | 'settings' | 'data'

@@ -17,7 +17,10 @@ import {
   saveFacialResult,
   saveFacialError,
   resetFacialRecord,
-  ensureFacialRecords
+  resetFacialRecords,
+  ensureFacialRecords,
+  deleteRatingsForImages,
+  updateRatingValue
 } from './store'
 import { pythonBridge, type BatchCallbacks } from './python-bridge'
 
@@ -159,6 +162,31 @@ export function registerIpcHandlers(): void {
     profile.currentIndex = index
     saveProfile(profile)
   })
+
+  // ---------------------------------------------------------------------------
+  // Data browser mutations
+  // ---------------------------------------------------------------------------
+
+  /** Reset one or more facial records back to pending. */
+  ipcMain.handle('reset-facial-data', (_e, filenames: string[]) => {
+    resetFacialRecords(filenames)
+    return { ok: true }
+  })
+
+  /** Delete ratings for the given images across all profiles. */
+  ipcMain.handle('delete-ratings-for-images', (_e, filenames: string[]) => {
+    deleteRatingsForImages(filenames)
+    return { ok: true }
+  })
+
+  /** Overwrite a single rating value. */
+  ipcMain.handle(
+    'update-rating-value',
+    (_e, { profileId, filename, value }: { profileId: string; filename: string; value: number }) => {
+      updateRatingValue(profileId, filename, value)
+      return { ok: true }
+    }
+  )
 
   // ---------------------------------------------------------------------------
   // Facial analysis

@@ -94,6 +94,22 @@ const api = {
     ipcRenderer.invoke('reprocess-image-facial', filename, filepath),
 
   // ---------------------------------------------------------------------------
+  // Data browser mutations
+  // ---------------------------------------------------------------------------
+
+  /** Reset facial records back to pending (so they can be reprocessed later). */
+  resetFacialData: (filenames: string[]): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('reset-facial-data', filenames),
+
+  /** Delete ratings for the given images across all profiles. */
+  deleteRatingsForImages: (filenames: string[]): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('delete-ratings-for-images', filenames),
+
+  /** Overwrite a single rating value for a profile. */
+  updateRatingValue: (profileId: string, filename: string, value: number): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('update-rating-value', { profileId, filename, value }),
+
+  // ---------------------------------------------------------------------------
   // Facial analysis events (push from main → renderer)
   // ---------------------------------------------------------------------------
 

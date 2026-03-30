@@ -203,16 +203,10 @@ def _classify_sex_v2(image_bgr: np.ndarray, model) -> tuple[str, float]:
     img = np.expand_dims(img, axis=0)
     
     try:
-        preds = model.predict(img)
-
-        _log(f'preds = {preds} | argmax = {np.argmax(preds)}')
-        idx = np.argmax(preds)
-
-        # 4. Decode
         labels = ["Woman", "Man"]
 
-        _log(f'preds = {preds}, idx = {idx}, preds[idx] = {preds[idx]}')
-
+        preds = model.predict(img)
+        idx = np.argmax(preds)
         return labels[idx], preds[idx]
 
     except ValueError as e:
