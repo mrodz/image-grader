@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Profile, AppSettings, StudyState, FacialData } from '../types'
+import type { Profile, Study, FacialData } from '../types'
 
 interface Props {
   profile: Profile
-  settings: AppSettings
-  study: StudyState
+  study: Study
   facialData: Record<string, FacialData>
   workerReady: boolean
   onProfileUpdate: (profile: Profile) => void
@@ -15,7 +14,6 @@ type LoadState = 'loading' | 'loaded' | 'missing' | 'error'
 
 export default function RatingScreen({
   profile,
-  settings,
   study,
   facialData,
   workerReady,
@@ -35,25 +33,18 @@ export default function RatingScreen({
   const total = imageList.length
   const filename = imageList[index] ?? null
 
-  // Load image when index changes
   useEffect(() => {
     if (!filename) return
     setLoadState('loading')
     setImageUrl(null)
     setAnalyzingThis(false)
-    // Pre-fill with existing rating if navigating back
     const existing = localProfile.ratings[filename]
     setRatingInput(existing !== undefined ? String(existing) : '')
 
-    window.api.getImageUrl(settings.inputDirectory, filename).then((url) => {
-      if (!url) {
-        setLoadState('missing')
-      } else {
-        setImageUrl(url)
-        setLoadState('loaded')
-      }
+    window.api.getImageUrl(study.inputDirectory, filename).then((url) => {
+      if (!url) setLoadState('missing')
+      else { setImageUrl(url); setLoadState('loaded') }
     })
-    // Focus input
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [index, filename])
 
@@ -84,30 +75,21 @@ export default function RatingScreen({
       currentIndex: nextIndex
     }
 
-    await window.api.saveRating({
-      profileId: localProfile.id,
-      filename,
-      rating: num,
-      newIndex: nextIndex
-    })
-
+    await window.api.saveRating({ profileId: localProfile.id, filename, rating: num, newIndex: nextIndex })
     setLocalProfile(updatedProfile)
     onProfileUpdate(updatedProfile)
     setLastSaved({ filename, rating: num })
 
-    if (nextIndex !== index) {
-      setIndex(nextIndex)
-    } else {
-      setRatingInput(String(num))
-    }
+    if (nextIndex !== index) setIndex(nextIndex)
+    else setRatingInput(String(num))
     setTimeout(() => inputRef.current?.focus(), 50)
   }
 
   async function handleAnalyzeThis() {
     if (!filename || !workerReady || analyzingThis) return
     setAnalyzingThis(true)
-    const filepath = `${settings.inputDirectory}/${filename}`
-    await window.api.processImage(filename, filepath)
+    const filepath = `${study.inputDirectory}/${filename}`
+    await window.api.processImage(study.id, filename, filepath)
     setAnalyzingThis(false)
     inputRef.current?.focus()
   }
@@ -115,25 +97,16 @@ export default function RatingScreen({
   async function handleReprocessThis() {
     if (!filename || !workerReady || analyzingThis) return
     setAnalyzingThis(true)
-    const filepath = `${settings.inputDirectory}/${filename}`
-    await window.api.reprocessImage(filename, filepath)
+    const filepath = `${study.inputDirectory}/${filename}`
+    await window.api.reprocessImage(study.id, filename, filepath)
     setAnalyzingThis(false)
     inputRef.current?.focus()
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      submitRating()
-    }
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      navigateTo(index - 1)
-    }
-    if (e.key === 'ArrowRight') {
-      e.preventDefault()
-      navigateTo(index + 1)
-    }
+    if (e.key === 'Enter') { e.preventDefault(); submitRating() }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); navigateTo(index - 1) }
+    if (e.key === 'ArrowRight') { e.preventDefault(); navigateTo(index + 1) }
   }
 
   function validateInput(value: string): string {
@@ -149,10 +122,8 @@ export default function RatingScreen({
   if (total === 0) {
     return (
       <div className="center-message">
-        <p>No images in study. Add images and rescan in Settings.</p>
-        <button className="btn" onClick={onExit}>
-          Back to Profiles
-        </button>
+        <p>No images in this study.</p>
+        <button className="btn" onClick={onExit}>← Back</button>
       </div>
     )
   }
@@ -163,16 +134,10 @@ export default function RatingScreen({
         <div className="complete-card">
           <div className="complete-icon">✓</div>
           <h2>All images rated!</h2>
-          <p>
-            {localProfile.name} has rated all {total} images.
-          </p>
+          <p>{localProfile.name} has rated all {total} images.</p>
           <div className="complete-actions">
-            <button className="btn-ghost" onClick={() => navigateTo(0)}>
-              Review from start
-            </button>
-            <button className="btn" onClick={onExit}>
-              Back to Profiles
-            </button>
+            <button className="btn-ghost" onClick={() => navigateTo(0)}>Review from start</button>
+            <button className="btn" onClick={onExit}>← Back to Participants</button>
           </div>
         </div>
       </div>
@@ -181,8 +146,6 @@ export default function RatingScreen({
 
   const inputNum = parseInt(ratingInput, 10)
   const isValidRating = !isNaN(inputNum) && inputNum >= 1 && inputNum <= 100
-
-  // Current image's facial data
   const fd = filename ? facialData[filename] : null
 
   if (fd?.processing_status === 'pending') {
@@ -191,11 +154,8 @@ export default function RatingScreen({
 
   return (
     <div className="rating-screen">
-      {/* Progress bar */}
       <div className="rating-topbar">
-        <button className="btn-ghost btn-sm" onClick={onExit}>
-          ← Profiles
-        </button>
+        <button className="btn-ghost btn-sm" onClick={onExit}>← Participants</button>
         <div className="rating-progress-wrap">
           <div className="rating-progress-bar">
             <div className="rating-progress-fill" style={{ width: `${pct}%` }} />
@@ -204,16 +164,11 @@ export default function RatingScreen({
             {ratedCount}/{total} rated · {remaining} remaining
           </span>
         </div>
-        <span className="rating-nav-label">
-          Viewing {index + 1} of {total}
-        </span>
+        <span className="rating-nav-label">Viewing {index + 1} of {total}</span>
       </div>
 
-      {/* Image area */}
       <div className="image-area">
-        {loadState === 'loading' && (
-          <div className="image-placeholder">Loading…</div>
-        )}
+        {loadState === 'loading' && <div className="image-placeholder">Loading…</div>}
         {loadState === 'missing' && (
           <div className="image-placeholder missing">
             <span>Image not found</span>
@@ -225,17 +180,14 @@ export default function RatingScreen({
             src={imageUrl}
             alt={filename ?? ''}
             className="image-display"
-            onLoad={() => setLoadState('loaded')}
             onError={() => setLoadState('error')}
           />
         )}
       </div>
 
-      {/* Rating controls */}
       <div className="rating-controls">
         <div className="rating-filename">{filename}</div>
 
-        {/* Face analysis badge */}
         <FaceAnalysisBadge
           data={fd}
           workerReady={workerReady}
@@ -273,7 +225,11 @@ export default function RatingScreen({
               disabled={!isValidRating}
               title="Submit rating (Enter)"
             >
-              {currentRating !== undefined && currentRating === inputNum ? 'Saved' : index + 1 < total ? 'Rate & Next' : 'Save Rating'}
+              {currentRating !== undefined && currentRating === inputNum
+                ? 'Saved'
+                : index + 1 < total
+                  ? 'Rate & Next'
+                  : 'Save Rating'}
             </button>
           </div>
 
@@ -295,17 +251,14 @@ export default function RatingScreen({
         {lastSaved && lastSaved.filename === filename && (
           <div className="save-confirm">Saved {lastSaved.rating}</div>
         )}
-
-        <div className="keyboard-hint">
-          Enter to submit · ← → to navigate
-        </div>
+        <div className="keyboard-hint">Enter to submit · ← → to navigate</div>
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Face analysis badge sub-component
+// Face analysis badge
 // ---------------------------------------------------------------------------
 
 interface BadgeProps {
@@ -331,11 +284,7 @@ function FaceAnalysisBadge({ data, workerReady, analyzing, onAnalyze, onReproces
       <div className="face-badge face-badge-pending">
         <span className="face-badge-dot" />
         Not yet analyzed
-        {workerReady && (
-          <button className="face-badge-action" onClick={onAnalyze}>
-            Analyze
-          </button>
-        )}
+        {workerReady && <button className="face-badge-action" onClick={onAnalyze}>Analyze</button>}
       </div>
     )
   }
@@ -345,23 +294,16 @@ function FaceAnalysisBadge({ data, workerReady, analyzing, onAnalyze, onReproces
       <div className="face-badge face-badge-error" title={data.processing_error ?? undefined}>
         <span className="face-badge-dot face-badge-dot-error" />
         Analysis failed
-        {workerReady && (
-          <button className="face-badge-action" onClick={onReprocess}>
-            Retry
-          </button>
-        )}
+        {workerReady && <button className="face-badge-action" onClick={onReprocess}>Retry</button>}
       </div>
     )
   }
 
-  // done
   const sexIcon = data.sex_label === 'male' ? 'M' : data.sex_label === 'female' ? 'F' : '?'
   const sexClass =
-    data.sex_label === 'male'
-      ? 'face-badge-sex-male'
-      : data.sex_label === 'female'
-        ? 'face-badge-sex-female'
-        : 'face-badge-sex-unknown'
+    data.sex_label === 'male' ? 'face-badge-sex-male'
+    : data.sex_label === 'female' ? 'face-badge-sex-female'
+    : 'face-badge-sex-unknown'
 
   return (
     <div className="face-badge face-badge-done">

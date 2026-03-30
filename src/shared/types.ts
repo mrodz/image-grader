@@ -1,25 +1,41 @@
 export interface AppSettings {
-  inputDirectory: string
   outputDirectory: string
 }
 
+// ---------------------------------------------------------------------------
+// Study (replaces the old global StudyState)
+// ---------------------------------------------------------------------------
+
+export interface Study {
+  id: string
+  name: string
+  inputDirectory: string
+  imageList: string[]
+  /** ISO timestamp of last rescan */
+  generatedAt: string
+  /** ISO timestamp of creation — never changes */
+  createdAt: string
+}
+
+export interface StudiesData {
+  studies: Study[]
+}
+
+// ---------------------------------------------------------------------------
+// Profile
+// ---------------------------------------------------------------------------
+
 export interface Profile {
   id: string
+  /** Which study this participant belongs to */
+  studyId: string
   name: string
   createdAt: string
   lastActiveAt: string
-  /** Index into StudyState.imageList — next image to rate */
+  /** Index into Study.imageList — next image to rate */
   currentIndex: number
-  /** filename (not path) → rating 1–100 */
+  /** filename → rating 1–100 */
   ratings: Record<string, number>
-}
-
-export interface StudyState {
-  /** Ordered list of image filenames, consistent across all profiles */
-  imageList: string[]
-  /** The inputDirectory that produced this list */
-  inputDirectory: string
-  generatedAt: string
 }
 
 export interface ProfilesData {
@@ -35,11 +51,13 @@ export interface RatingSavePayload {
 }
 
 export interface ExportRow {
+  study_id: string
+  study_name: string
   filepath: string
   filename: string
   mean_rating: number | null
   n_raters: number
-  [participantCol: string]: string | number | null
+  [col: string]: string | number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -51,12 +69,11 @@ export type SexLabel = 'male' | 'female' | 'unknown'
 export type ProcessingStatus = 'pending' | 'processing' | 'done' | 'error'
 
 export interface FacialData {
-  /** Image filename (not full path) — matches keys in StudyState.imageList */
+  /** Image filename (not full path) */
   filename: string
   sex_label: SexLabel
   sex_confidence: number | null
   face_detected: boolean
-  /** Flattened facial metrics as returned by facial_analysis.FacialMetrics.to_dict() */
   facial_metrics_json: Record<string, unknown>
   processing_status: ProcessingStatus
   processing_error: string | null
@@ -64,17 +81,17 @@ export interface FacialData {
 }
 
 export interface FacialDataStore {
-  /** filename → FacialData */
+  /**
+   * Key format: "studyId:filename"
+   * This ensures no collision when two studies share a filename.
+   */
   records: Record<string, FacialData>
 }
 
 export interface FacialProgressEvent {
   filename: string
   status: ProcessingStatus
-  /** How many images have been completed (ok or error) in the current batch */
   completed: number
-  /** Total images in the current batch */
   total: number
-  /** Set when status === 'done' or 'error' */
   data?: Omit<FacialData, 'filename'>
 }

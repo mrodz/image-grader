@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Profile, AppSettings, StudyState } from '../types'
+import type { Profile, Study } from '../types'
 
 interface Props {
-  settings: AppSettings
-  study: StudyState | null
+  study: Study
   onSelectProfile: (profile: Profile) => void
-  onGoSettings: () => void
+  onBack: () => void
 }
 
-export default function ProfileScreen({ settings, study, onSelectProfile, onGoSettings }: Props) {
+export default function ProfileScreen({ study, onSelectProfile, onBack }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [newName, setNewName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -17,19 +16,14 @@ export default function ProfileScreen({ settings, study, onSelectProfile, onGoSe
   const newNameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    loadProfiles()
-  }, [])
-
-  async function loadProfiles() {
-    const ps = await window.api.getProfiles()
-    setProfiles(ps)
-  }
+    window.api.getProfiles(study.id).then(setProfiles)
+  }, [study.id])
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     const name = newName.trim()
     if (!name) return
-    const profile = await window.api.createProfile(name)
+    const profile = await window.api.createProfile(study.id, name)
     setProfiles((prev) => [...prev, profile])
     setNewName('')
     newNameRef.current?.focus()
@@ -50,63 +44,45 @@ export default function ProfileScreen({ settings, study, onSelectProfile, onGoSe
   }
 
   function progressFor(profile: Profile): { rated: number; total: number; pct: number } {
-    const total = study?.imageList.length ?? 0
+    const total = study.imageList.length
     const rated = Object.keys(profile.ratings).length
     const pct = total > 0 ? Math.round((rated / total) * 100) : 0
     return { rated, total, pct }
   }
 
-  const hasDirectory = !!settings.inputDirectory
-  const hasImages = (study?.imageList.length ?? 0) > 0
+  const hasImages = study.imageList.length > 0
 
   return (
     <div className="profile-screen">
       <div className="profile-header">
-        <h1>Select Participant</h1>
-        {!hasDirectory && (
+        <button className="btn-ghost btn-sm" style={{ marginBottom: 12 }} onClick={onBack}>
+          ← Studies
+        </button>
+        <h1>{study.name}</h1>
+        <p className="study-info">
+          {study.imageList.length} image{study.imageList.length !== 1 ? 's' : ''} · Select a participant to begin rating
+        </p>
+        {!hasImages && (
           <div className="warn-banner">
-            No image directory set.{' '}
-            <button className="link-btn" onClick={onGoSettings}>
-              Open Settings
-            </button>{' '}
-            to configure one.
+            No images found in this study. Rescan the image directory from the Studies screen.
           </div>
-        )}
-        {hasDirectory && !hasImages && (
-          <div className="warn-banner">
-            Directory is set but no images were found.{' '}
-            <button className="link-btn" onClick={onGoSettings}>
-              Rescan in Settings
-            </button>
-          </div>
-        )}
-        {hasImages && (
-          <p className="study-info">
-            {study!.imageList.length} images in study
-          </p>
         )}
       </div>
 
       <div className="profile-list">
         {profiles.length === 0 && (
-          <p className="empty-hint">No profiles yet. Create one below.</p>
+          <p className="empty-hint">No participants yet. Create one below.</p>
         )}
         {profiles.map((profile) => {
           const { rated, total, pct } = progressFor(profile)
           const isDone = total > 0 && rated >= total
 
           return (
-            <div
-              key={profile.id}
-              className={`profile-card${isDone ? ' done' : ''}`}
-            >
+            <div key={profile.id} className={`profile-card${isDone ? ' done' : ''}`}>
               {renamingId === profile.id ? (
                 <form
                   className="rename-form"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    handleRename(profile.id)
-                  }}
+                  onSubmit={(e) => { e.preventDefault(); handleRename(profile.id) }}
                 >
                   <input
                     autoFocus
@@ -155,10 +131,7 @@ export default function ProfileScreen({ settings, study, onSelectProfile, onGoSe
                       <>
                         <button
                           className="btn-ghost btn-sm"
-                          onClick={() => {
-                            setRenamingId(profile.id)
-                            setRenameValue(profile.name)
-                          }}
+                          onClick={() => { setRenamingId(profile.id); setRenameValue(profile.name) }}
                         >
                           Rename
                         </button>
@@ -187,7 +160,7 @@ export default function ProfileScreen({ settings, study, onSelectProfile, onGoSe
           onChange={(e) => setNewName(e.target.value)}
         />
         <button type="submit" className="btn" disabled={!newName.trim()}>
-          Create Profile
+          Add Participant
         </button>
       </form>
     </div>

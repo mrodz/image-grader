@@ -1,55 +1,40 @@
 import { useState, useMemo } from 'react'
-import type { AppSettings, StudyState, FacialData } from '../types'
+import type { AppSettings, Study, FacialData } from '../types'
 
 interface Props {
   settings: AppSettings
-  study: StudyState | null
+  activeStudy: Study | null
   facialData: Record<string, FacialData>
   workerReady: boolean
   onSettingsChange: (s: AppSettings) => void
-  onStudyChange: (st: StudyState) => void
   onFacialDataChange: (fd: Record<string, FacialData>) => void
 }
 
-type ExportState = 'idle' | 'running' | 'done' | 'error'
 type BatchState = 'idle' | 'running' | 'done'
 
 export default function SettingsScreen({
   settings,
-  study,
+  activeStudy,
   facialData,
   workerReady,
   onSettingsChange,
-  onStudyChange,
   onFacialDataChange
 }: Props) {
-  const [inputDir, setInputDir] = useState(settings.inputDirectory)
   const [outputDir, setOutputDir] = useState(settings.outputDirectory)
   const [saving, setSaving] = useState(false)
-  const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<string | null>(null)
-  const [exportState, setExportState] = useState<ExportState>('idle')
-  const [exportMessage, setExportMessage] = useState('')
   const [batchState, setBatchState] = useState<BatchState>('idle')
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0 })
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  // Facial analysis statistics
   const facialStats = useMemo(() => {
-    const imageList = study?.imageList ?? []
+    const imageList = activeStudy?.imageList ?? []
     const stats = { pending: 0, processing: 0, done: 0, error: 0, total: imageList.length }
     for (const filename of imageList) {
-      const fd = facialData[filename]
-      const status = fd?.processing_status ?? 'pending'
+      const status = facialData[filename]?.processing_status ?? 'pending'
       if (status in stats) (stats as Record<string, number>)[status]++
     }
     return stats
-  }, [facialData, study])
-
-  async function handlePickInput() {
-    const dir = await window.api.selectDirectory(inputDir || undefined)
-    if (dir) setInputDir(dir)
-  }
+  }, [facialData, activeStudy])
 
   async function handlePickOutput() {
     const dir = await window.api.selectDirectory(outputDir || undefined)
@@ -58,55 +43,26 @@ export default function SettingsScreen({
 
   async function handleSave() {
     setSaving(true)
-    const updated: AppSettings = { inputDirectory: inputDir, outputDirectory: outputDir }
+    const updated: AppSettings = { outputDirectory: outputDir }
     await window.api.saveSettings(updated)
     onSettingsChange(updated)
     setSaving(false)
   }
 
-  async function handleRescan() {
-    if (!inputDir) return
-    setScanning(true)
-    setScanResult(null)
-    const state = await window.api.rescanImages(inputDir)
-    onStudyChange(state)
-    // Refresh facial data (rescan seeds pending records for new images)
-    const fd = await window.api.getFacialData()
-    onFacialDataChange(fd)
-    setScanResult(`Found ${state.imageList.length} image${state.imageList.length !== 1 ? 's' : ''}.`)
-    setScanning(false)
-  }
-
-  async function handleExport() {
-    setExportState('running')
-    setExportMessage('')
-    const result = await window.api.exportCsv(outputDir)
-    if (result.ok) {
-      setExportState('done')
-      setExportMessage(`Exported to:\n${result.path}\n${result.longPath}`)
-    } else {
-      setExportState('error')
-      setExportMessage(result.error ?? 'Export failed.')
-    }
-  }
-
   async function handleAnalyzeAll() {
-    if (!study || !workerReady) return
-    const items = study.imageList
-      .filter((filename) => {
-        const status = facialData[filename]?.processing_status ?? 'pending'
-        return status === 'pending'
-      })
+    if (!activeStudy || !workerReady) return
+    const items = activeStudy.imageList
+      .filter((filename) => (facialData[filename]?.processing_status ?? 'pending') === 'pending')
       .map((filename) => ({
+        studyId: activeStudy.id,
         filename,
-        filepath: `${settings.inputDirectory}/${filename}`
+        filepath: `${activeStudy.inputDirectory}/${filename}`
       }))
 
     if (items.length === 0) return
     setBatchState('running')
     setBatchProgress({ completed: 0, total: items.length })
 
-    // Subscribe to progress for this batch
     window.api.onFacialProgress((event) => {
       if (event.status === 'done' || event.status === 'error') {
         setBatchProgress({ completed: event.completed, total: event.total })
@@ -115,7 +71,7 @@ export default function SettingsScreen({
 
     window.api.onFacialBatchComplete(async () => {
       window.api.offFacialBatchComplete()
-      const fd = await window.api.getFacialData()
+      const fd = await window.api.getFacialData(activeStudy.id)
       onFacialDataChange(fd)
       setBatchState('done')
     })
@@ -124,12 +80,13 @@ export default function SettingsScreen({
   }
 
   async function handleRetryFailed() {
-    if (!study || !workerReady) return
-    const items = study.imageList
+    if (!activeStudy || !workerReady) return
+    const items = activeStudy.imageList
       .filter((filename) => facialData[filename]?.processing_status === 'error')
       .map((filename) => ({
+        studyId: activeStudy.id,
         filename,
-        filepath: `${settings.inputDirectory}/${filename}`
+        filepath: `${activeStudy.inputDirectory}/${filename}`
       }))
 
     if (items.length === 0) return
@@ -138,7 +95,7 @@ export default function SettingsScreen({
 
     window.api.onFacialBatchComplete(async () => {
       window.api.offFacialBatchComplete()
-      const fd = await window.api.getFacialData()
+      const fd = await window.api.getFacialData(activeStudy.id)
       onFacialDataChange(fd)
       setBatchState('done')
     })
@@ -146,10 +103,9 @@ export default function SettingsScreen({
     await window.api.processBatch(items)
   }
 
-  const dirty = inputDir !== settings.inputDirectory || outputDir !== settings.outputDirectory
-  const imageList = study?.imageList ?? []
+  const dirty = outputDir !== settings.outputDirectory
+  const imageList = activeStudy?.imageList ?? []
 
-  // Filtered image list for the status table
   const filteredImages = useMemo(() => {
     if (statusFilter === 'all') return imageList
     return imageList.filter((filename) => {
@@ -165,56 +121,21 @@ export default function SettingsScreen({
     <div className="settings-screen">
       <h1>Settings</h1>
 
-      {/* --- Directories --- */}
+      {/* --- Output Directory --- */}
       <section className="settings-section">
-        <h2>Directories</h2>
-
-        <div className="field">
-          <label>Image input directory</label>
-          <div className="dir-row">
-            <span className="dir-value">{inputDir || <em>Not set</em>}</span>
-            <button className="btn-ghost btn-sm" onClick={handlePickInput}>
-              Browse…
-            </button>
-          </div>
-        </div>
-
+        <h2>Export Directory</h2>
         <div className="field">
           <label>Output / export directory</label>
           <div className="dir-row">
             <span className="dir-value">{outputDir || <em>Not set</em>}</span>
-            <button className="btn-ghost btn-sm" onClick={handlePickOutput}>
-              Browse…
-            </button>
+            <button className="btn-ghost btn-sm" onClick={handlePickOutput}>Browse…</button>
           </div>
         </div>
-
         {dirty && (
           <button className="btn" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Settings'}
+            {saving ? 'Saving…' : 'Save'}
           </button>
         )}
-      </section>
-
-      {/* --- Image List --- */}
-      <section className="settings-section">
-        <h2>Image List</h2>
-        <p className="settings-desc">
-          The image list defines the order all participants see images. Rescanning replaces the list
-          but preserves all existing ratings.
-        </p>
-        {study && (
-          <div className="study-info-box">
-            <span>
-              {study.imageList.length} images · Last scanned{' '}
-              {new Date(study.generatedAt).toLocaleString()}
-            </span>
-          </div>
-        )}
-        <button className="btn" onClick={handleRescan} disabled={!inputDir || scanning}>
-          {scanning ? 'Scanning…' : 'Rescan Image Directory'}
-        </button>
-        {scanResult && <p className="scan-result">{scanResult}</p>}
       </section>
 
       {/* --- Facial Analysis --- */}
@@ -225,23 +146,29 @@ export default function SettingsScreen({
           MediaPipe Face Landmarker.
         </p>
 
-        {/* Worker status */}
         <div className={`worker-status ${workerReady ? 'worker-ready' : 'worker-not-ready'}`}>
           <span className={`worker-dot ${workerReady ? 'worker-dot-ready' : 'worker-dot-off'}`} />
           {workerReady ? 'Python worker ready' : 'Python worker not running'}
         </div>
 
-        {/* Stats */}
-        {study && study.imageList.length > 0 && (
-          <div className="facial-stats">
-            <FacialStatPill label="Done" value={facialStats.done} color="success" />
-            <FacialStatPill label="Pending" value={facialStats.pending} color="muted" />
-            <FacialStatPill label="Failed" value={facialStats.error} color="danger" />
-            <FacialStatPill label="Total" value={facialStats.total} color="accent" />
-          </div>
+        {!activeStudy && (
+          <p className="settings-desc">Open a study to see facial analysis stats.</p>
         )}
 
-        {/* Batch progress */}
+        {activeStudy && imageList.length > 0 && (
+          <>
+            <p className="settings-desc" style={{ marginBottom: 10 }}>
+              Active study: <strong>{activeStudy.name}</strong>
+            </p>
+            <div className="facial-stats">
+              <FacialStatPill label="Done" value={facialStats.done} color="success" />
+              <FacialStatPill label="Pending" value={facialStats.pending} color="muted" />
+              <FacialStatPill label="Failed" value={facialStats.error} color="danger" />
+              <FacialStatPill label="Total" value={facialStats.total} color="accent" />
+            </div>
+          </>
+        )}
+
         {batchState === 'running' && (
           <div className="batch-progress">
             <div className="batch-progress-bar">
@@ -252,32 +179,30 @@ export default function SettingsScreen({
             </span>
           </div>
         )}
-        {batchState === 'done' && (
-          <p className="scan-result">Batch processing complete.</p>
+        {batchState === 'done' && <p className="scan-result">Batch processing complete.</p>}
+
+        {activeStudy && (
+          <div className="facial-actions">
+            <button
+              className="btn"
+              onClick={handleAnalyzeAll}
+              disabled={!workerReady || facialStats.pending === 0 || batchState === 'running'}
+            >
+              {batchState === 'running' ? 'Processing…' : `Analyze Pending (${facialStats.pending})`}
+            </button>
+            {facialStats.error > 0 && (
+              <button
+                className="btn-ghost"
+                onClick={handleRetryFailed}
+                disabled={!workerReady || batchState === 'running'}
+              >
+                Retry Failed ({facialStats.error})
+              </button>
+            )}
+          </div>
         )}
 
-        {/* Actions */}
-        <div className="facial-actions">
-          <button
-            className="btn"
-            onClick={handleAnalyzeAll}
-            disabled={!workerReady || !study || facialStats.pending === 0 || batchState === 'running'}
-          >
-            {batchState === 'running' ? 'Processing…' : `Analyze Pending (${facialStats.pending})`}
-          </button>
-          {facialStats.error > 0 && (
-            <button
-              className="btn-ghost"
-              onClick={handleRetryFailed}
-              disabled={!workerReady || batchState === 'running'}
-            >
-              Retry Failed ({facialStats.error})
-            </button>
-          )}
-        </div>
-
-        {/* Image status table */}
-        {study && study.imageList.length > 0 && (
+        {activeStudy && imageList.length > 0 && (
           <div className="facial-table-wrap">
             <div className="facial-filter-row">
               <span className="facial-filter-label">Filter:</span>
@@ -302,9 +227,7 @@ export default function SettingsScreen({
                     {status === 'done' && (
                       <>
                         <span className="facial-row-sex">{fd.sex_label}</span>
-                        <span className="facial-row-face">
-                          {fd.face_detected ? 'Face' : 'No face'}
-                        </span>
+                        <span className="facial-row-face">{fd.face_detected ? 'Face' : 'No face'}</span>
                       </>
                     )}
                     {status === 'error' && (
@@ -324,38 +247,11 @@ export default function SettingsScreen({
           </div>
         )}
       </section>
-
-      {/* --- Export --- */}
-      <section className="settings-section">
-        <h2>Export Data</h2>
-        <p className="settings-desc">
-          Aggregate all participant ratings and facial metrics into CSV files. Produces a wide-format
-          file (one row per image) and a long-format file suitable for statistical analysis.
-        </p>
-        <button className="btn" onClick={handleExport} disabled={exportState === 'running'}>
-          {exportState === 'running' ? 'Exporting…' : 'Export Ratings CSV…'}
-        </button>
-        {exportMessage && (
-          <pre className={`export-message ${exportState}`}>{exportMessage}</pre>
-        )}
-      </section>
     </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function FacialStatPill({
-  label,
-  value,
-  color
-}: {
-  label: string
-  value: number
-  color: 'success' | 'danger' | 'muted' | 'accent'
-}) {
+function FacialStatPill({ label, value, color }: { label: string; value: number; color: 'success' | 'danger' | 'muted' | 'accent' }) {
   return (
     <div className={`facial-stat-pill facial-stat-${color}`}>
       <span className="facial-stat-value">{value}</span>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { Profile, AppSettings, StudyState, FacialData } from '../types'
+import type { Profile, Study, FacialData } from '../types'
 
 type Filter = 'all' | 'rated' | 'unrated' | 'face-done' | 'face-pending' | 'face-error'
 
@@ -10,8 +10,7 @@ interface EditCell {
 }
 
 interface Props {
-  settings: AppSettings
-  study: StudyState | null
+  study: Study | null
   facialData: Record<string, FacialData>
   workerReady: boolean
   onFacialDataChange: (data: Record<string, FacialData>) => void
@@ -26,13 +25,7 @@ const FILTERS: Array<{ id: Filter; label: string }> = [
   { id: 'face-error', label: 'Error' }
 ]
 
-export default function DataBrowserScreen({
-  settings,
-  study,
-  facialData,
-  workerReady,
-  onFacialDataChange
-}: Props) {
+export default function DataBrowserScreen({ study, facialData, workerReady, onFacialDataChange }: Props) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
@@ -43,25 +36,20 @@ export default function DataBrowserScreen({
   const images = study?.imageList ?? []
 
   useEffect(() => {
-    window.api.getProfiles().then(setProfiles)
-  }, [])
+    if (!study) return
+    window.api.getProfiles(study.id).then(setProfiles)
+  }, [study?.id])
 
   const filteredImages = images.filter((filename) => {
     if (search && !filename.toLowerCase().includes(search.toLowerCase())) return false
     const fd = facialData[filename]
     switch (filter) {
-      case 'rated':
-        return profiles.some((p) => p.ratings[filename] !== undefined)
-      case 'unrated':
-        return profiles.every((p) => p.ratings[filename] === undefined)
-      case 'face-done':
-        return fd?.processing_status === 'done'
-      case 'face-pending':
-        return !fd || fd.processing_status === 'pending'
-      case 'face-error':
-        return fd?.processing_status === 'error'
-      default:
-        return true
+      case 'rated': return profiles.some((p) => p.ratings[filename] !== undefined)
+      case 'unrated': return profiles.every((p) => p.ratings[filename] === undefined)
+      case 'face-done': return fd?.processing_status === 'done'
+      case 'face-pending': return !fd || fd.processing_status === 'pending'
+      case 'face-error': return fd?.processing_status === 'error'
+      default: return true
     }
   })
 
@@ -71,52 +59,46 @@ export default function DataBrowserScreen({
 
   function toggleAll() {
     if (allSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev)
-        filteredImages.forEach((f) => next.delete(f))
-        return next
-      })
+      setSelected((prev) => { const n = new Set(prev); filteredImages.forEach((f) => n.delete(f)); return n })
     } else {
-      setSelected((prev) => {
-        const next = new Set(prev)
-        filteredImages.forEach((f) => next.add(f))
-        return next
-      })
+      setSelected((prev) => { const n = new Set(prev); filteredImages.forEach((f) => n.add(f)); return n })
     }
   }
 
   function toggleOne(filename: string) {
     setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(filename)) next.delete(filename)
-      else next.add(filename)
-      return next
+      const n = new Set(prev)
+      if (n.has(filename)) n.delete(filename); else n.add(filename)
+      return n
     })
   }
 
   async function handleResetFacial(filenames: string[]) {
+    if (!study) return
     setBusy(true)
-    await window.api.resetFacialData(filenames)
-    const fresh = await window.api.getFacialData()
+    await window.api.resetFacialData(study.id, filenames)
+    const fresh = await window.api.getFacialData(study.id)
     onFacialDataChange(fresh)
     setSelected(new Set())
     setBusy(false)
   }
 
   async function handleDeleteRatings(filenames: string[]) {
+    if (!study) return
     setBusy(true)
-    await window.api.deleteRatingsForImages(filenames)
-    const fresh = await window.api.getProfiles()
+    await window.api.deleteRatingsForImages(study.id, filenames)
+    const fresh = await window.api.getProfiles(study.id)
     setProfiles(fresh)
     setSelected(new Set())
     setBusy(false)
   }
 
   async function handleReprocess(filenames: string[]) {
-    if (!settings.inputDirectory) return
+    if (!study) return
     const items = filenames.map((filename) => ({
+      studyId: study.id,
       filename,
-      filepath: `${settings.inputDirectory}/${filename}`
+      filepath: `${study.inputDirectory}/${filename}`
     }))
     await window.api.processBatch(items)
     setSelected(new Set())
@@ -127,11 +109,11 @@ export default function DataBrowserScreen({
   }
 
   async function commitEdit() {
-    if (!editCell) return
+    if (!editCell || !study) return
     const val = parseInt(editCell.draft, 10)
     if (!isNaN(val) && val >= 1 && val <= 100) {
       await window.api.updateRatingValue(editCell.profileId, editCell.filename, val)
-      const fresh = await window.api.getProfiles()
+      const fresh = await window.api.getProfiles(study.id)
       setProfiles(fresh)
     }
     setEditCell(null)
@@ -140,9 +122,9 @@ export default function DataBrowserScreen({
   if (!study) {
     return (
       <div className="center-message">
-        <p>No image directory scanned yet.</p>
+        <p>No active study.</p>
         <p style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6 }}>
-          Configure a directory in Settings first.
+          Open a study from the Studies screen first.
         </p>
       </div>
     )
@@ -150,7 +132,6 @@ export default function DataBrowserScreen({
 
   return (
     <div className="data-browser">
-      {/* Toolbar */}
       <div className="db-toolbar">
         <input
           className="db-search input"
@@ -170,23 +151,16 @@ export default function DataBrowserScreen({
             </button>
           ))}
         </div>
-        <span className="db-count">
-          {filteredImages.length} / {images.length}
-        </span>
+        <span className="db-count">{filteredImages.length} / {images.length}</span>
       </div>
 
-      {/* Bulk action bar */}
       {someSelected && (
         <div className="db-bulk-bar">
           <span className="db-bulk-count">{selectedInView.length} selected</span>
           <button className="btn-ghost" disabled={busy} onClick={() => handleResetFacial(selectedInView)}>
             Reset Facial
           </button>
-          <button
-            className="btn-ghost danger"
-            disabled={busy}
-            onClick={() => handleDeleteRatings(selectedInView)}
-          >
+          <button className="btn-ghost danger" disabled={busy} onClick={() => handleDeleteRatings(selectedInView)}>
             Delete Ratings
           </button>
           {workerReady && (
@@ -194,13 +168,10 @@ export default function DataBrowserScreen({
               Reprocess
             </button>
           )}
-          <button className="btn-ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </button>
+          <button className="btn-ghost" onClick={() => setSelected(new Set())}>Clear</button>
         </div>
       )}
 
-      {/* Table */}
       <div className="db-table-wrap">
         <table className="db-table">
           <thead>
@@ -209,9 +180,7 @@ export default function DataBrowserScreen({
                 <input
                   type="checkbox"
                   checked={allSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someSelected && !allSelected
-                  }}
+                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
                   onChange={toggleAll}
                 />
               </th>
@@ -237,15 +206,11 @@ export default function DataBrowserScreen({
                   <td className="db-td db-td-check">
                     <input type="checkbox" checked={isSelected} onChange={() => toggleOne(filename)} />
                   </td>
-                  <td className="db-td db-td-name" title={filename}>
-                    {filename}
-                  </td>
+                  <td className="db-td db-td-name" title={filename}>{filename}</td>
 
-                  {/* Per-profile ratings */}
                   {profiles.map((p) => {
                     const rating = p.ratings[filename]
-                    const isEditing =
-                      editCell?.filename === filename && editCell.profileId === p.id
+                    const isEditing = editCell?.filename === filename && editCell.profileId === p.id
                     return (
                       <td key={p.id} className="db-td db-td-rating">
                         {isEditing ? (
@@ -256,11 +221,7 @@ export default function DataBrowserScreen({
                             max={100}
                             value={editCell.draft}
                             autoFocus
-                            onChange={(e) =>
-                              setEditCell((prev) =>
-                                prev ? { ...prev, draft: e.target.value } : null
-                              )
-                            }
+                            onChange={(e) => setEditCell((prev) => prev ? { ...prev, draft: e.target.value } : null)}
                             onBlur={commitEdit}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') commitEdit()
@@ -280,83 +241,41 @@ export default function DataBrowserScreen({
                     )
                   })}
 
-                  {/* Sex */}
                   <td className="db-td">
                     {fd?.sex_label && fd.sex_label !== 'unknown' ? (
                       <span className={`db-sex-badge db-sex-${fd.sex_label}`}>
                         {fd.sex_label === 'male' ? 'M' : 'F'}
                       </span>
-                    ) : (
-                      <span className="db-muted">—</span>
-                    )}
+                    ) : <span className="db-muted">—</span>}
                   </td>
-
-                  {/* Confidence */}
                   <td className="db-td db-td-conf">
-                    {fd?.sex_confidence != null ? (
-                      `${Math.round(fd.sex_confidence * 100)}%`
-                    ) : (
-                      <span className="db-muted">—</span>
-                    )}
+                    {fd?.sex_confidence != null
+                      ? `${Math.round(fd.sex_confidence * 100)}%`
+                      : <span className="db-muted">—</span>}
                   </td>
-
-                  {/* Face detected */}
                   <td className="db-td">
-                    {fd?.processing_status === 'done' ? (
-                      fd.face_detected ? (
-                        <span className="db-face-yes">Yes</span>
-                      ) : (
-                        <span className="db-muted">No</span>
-                      )
-                    ) : (
-                      <span className="db-muted">—</span>
-                    )}
+                    {fd?.processing_status === 'done'
+                      ? (fd.face_detected ? <span className="db-face-yes">Yes</span> : <span className="db-muted">No</span>)
+                      : <span className="db-muted">—</span>}
                   </td>
-
-                  {/* Status */}
                   <td className="db-td">
                     <span className={`db-status status-${fd?.processing_status ?? 'pending'}`}>
                       {fd?.processing_status ?? 'pending'}
                     </span>
                   </td>
-
-                  {/* Actions */}
                   <td className="db-td db-td-actions">
                     {workerReady && fd?.processing_status !== 'processing' && (
-                      <button
-                        className="db-action-btn"
-                        onClick={() => handleReprocess([filename])}
-                        title="Reprocess facial analysis"
-                      >
-                        ↻
-                      </button>
+                      <button className="db-action-btn" onClick={() => handleReprocess([filename])} title="Reprocess">↻</button>
                     )}
-                    <button
-                      className="db-action-btn"
-                      onClick={() => handleResetFacial([filename])}
-                      title="Reset facial data to pending"
-                      disabled={busy}
-                    >
-                      ⊘
-                    </button>
-                    <button
-                      className="db-action-btn db-action-danger"
-                      onClick={() => handleDeleteRatings([filename])}
-                      title="Delete all ratings for this image"
-                      disabled={busy}
-                    >
-                      ✕
-                    </button>
+                    <button className="db-action-btn" onClick={() => handleResetFacial([filename])} title="Reset facial to pending" disabled={busy}>⊘</button>
+                    <button className="db-action-btn db-action-danger" onClick={() => handleDeleteRatings([filename])} title="Delete all ratings" disabled={busy}>✕</button>
                   </td>
                 </tr>
               )
             })}
             {filteredImages.length === 0 && (
               <tr>
-                <td
-                  colSpan={profiles.length + 7}
-                  className="db-empty"
-                >
+                <td colSpan={profiles.length + 7} className="db-empty">
                   No images match the current filter.
                 </td>
               </tr>

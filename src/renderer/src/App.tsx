@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import type { Profile, AppSettings, StudyState, Screen, FacialData, FacialProgressEvent } from './types'
+import type { Study, Profile, AppSettings, Screen, FacialData, FacialProgressEvent } from './types'
+import StudiesScreen from './screens/StudiesScreen'
 import ProfileScreen from './screens/ProfileScreen'
 import RatingScreen from './screens/RatingScreen'
 import SettingsScreen from './screens/SettingsScreen'
@@ -7,25 +8,27 @@ import DataBrowserScreen from './screens/DataBrowserScreen'
 import { useWorkerStatus } from './useWorkerStatus'
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('profiles')
+  const [screen, setScreen] = useState<Screen>('studies')
+  const [prevScreen, setPrevScreen] = useState<Screen>('studies')
+  const [activeStudy, setActiveStudy] = useState<Study | null>(null)
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [study, setStudy] = useState<StudyState | null>(null)
   const [facialData, setFacialData] = useState<Record<string, FacialData>>({})
   const workerReady = useWorkerStatus()
 
-  // Initial data load
+  // Load global settings on mount
   useEffect(() => {
-    Promise.all([
-      window.api.getSettings(),
-      window.api.getStudyState(),
-      window.api.getFacialData(),
-    ]).then(([s, st, fd]) => {
-      setSettings(s)
-      setStudy(st)
-      setFacialData(fd)
-    })
+    window.api.getSettings().then(setSettings)
   }, [])
+
+  // Reload facial data when active study changes
+  useEffect(() => {
+    if (!activeStudy) {
+      setFacialData({})
+      return
+    }
+    window.api.getFacialData(activeStudy.id).then(setFacialData)
+  }, [activeStudy?.id])
 
   // Subscribe to facial analysis progress events
   useEffect(() => {
@@ -36,14 +39,10 @@ export default function App() {
           [event.filename]: { filename: event.filename, ...event.data! }
         }))
       } else {
-        // Mark as processing in local state immediately
         setFacialData((prev) => {
           const existing = prev[event.filename]
           if (!existing) return prev
-          return {
-            ...prev,
-            [event.filename]: { ...existing, processing_status: event.status }
-          }
+          return { ...prev, [event.filename]: { ...existing, processing_status: event.status } }
         })
       }
     })
@@ -54,14 +53,28 @@ export default function App() {
     }
   }, [])
 
-  async function refreshStudy() {
-    const st = await window.api.getStudyState()
-    setStudy(st)
+  function navigate(to: Screen) {
+    setPrevScreen(screen)
+    setScreen(to)
   }
 
-  async function refreshSettings() {
-    const s = await window.api.getSettings()
-    setSettings(s)
+  function handleBack() {
+    if (screen === 'settings' || screen === 'data') {
+      setScreen(prevScreen === 'rating' && activeProfile ? 'rating' : activeStudy ? 'profiles' : 'studies')
+    } else if (screen === 'profiles') {
+      setActiveStudy(null)
+      setScreen('studies')
+    } else if (screen === 'rating') {
+      setActiveProfile(null)
+      setScreen('profiles')
+    } else {
+      setScreen('studies')
+    }
+  }
+
+  function handleSelectStudy(study: Study) {
+    setActiveStudy(study)
+    setScreen('profiles')
   }
 
   function handleSelectProfile(profile: Profile) {
@@ -83,6 +96,9 @@ export default function App() {
     )
   }
 
+  const onNonRootScreen = screen !== 'studies'
+  const onAuxScreen = screen === 'settings' || screen === 'data'
+
   return (
     <div className="app">
       <nav className="topbar">
@@ -94,76 +110,63 @@ export default function App() {
               {activeProfile.name}
             </span>
           )}
-          {screen !== 'settings' && screen !== 'data' && (
+          {activeStudy && screen !== 'studies' && screen !== 'settings' && screen !== 'data' && (
+            <span className="topbar-study-label">{activeStudy.name}</span>
+          )}
+          {!onAuxScreen && onNonRootScreen && (
             <>
-              <button className="btn-ghost" onClick={() => setScreen('data')}>
-                Data
-              </button>
-              <button className="btn-ghost" onClick={() => setScreen('settings')}>
-                Settings
-              </button>
+              <button className="btn-ghost" onClick={() => navigate('data')}>Data</button>
+              <button className="btn-ghost" onClick={() => navigate('settings')}>Settings</button>
             </>
           )}
-          {(screen === 'settings' || screen === 'data') && (
-            <button
-              className="btn-ghost"
-              onClick={() => setScreen(activeProfile ? 'rating' : 'profiles')}
-            >
-              ← Back
-            </button>
+          {onAuxScreen && (
+            <button className="btn-ghost" onClick={handleBack}>← Back</button>
           )}
         </div>
       </nav>
 
       <main className="content">
-        {screen === 'profiles' && (
-          <ProfileScreen
+        {screen === 'studies' && (
+          <StudiesScreen
             settings={settings}
-            study={study}
-            onSelectProfile={handleSelectProfile}
-            onGoSettings={() => setScreen('settings')}
+            onSelectStudy={handleSelectStudy}
+            onGoSettings={() => navigate('settings')}
           />
         )}
-        {screen === 'rating' && activeProfile && settings && study && (
+
+        {screen === 'profiles' && activeStudy && (
+          <ProfileScreen
+            study={activeStudy}
+            onSelectProfile={handleSelectProfile}
+            onBack={() => { setActiveStudy(null); setScreen('studies') }}
+          />
+        )}
+
+        {screen === 'rating' && activeProfile && activeStudy && (
           <RatingScreen
             profile={activeProfile}
-            settings={settings}
-            study={study}
+            study={activeStudy}
             facialData={facialData}
             workerReady={workerReady}
             onProfileUpdate={(p) => setActiveProfile(p)}
             onExit={handleExitRating}
           />
         )}
-        {screen === 'rating' && activeProfile && (!settings.inputDirectory || !study) && (
-          <div className="center-message">
-            <p>No image directory configured.</p>
-            <button className="btn" onClick={() => setScreen('settings')}>
-              Open Settings
-            </button>
-          </div>
-        )}
+
         {screen === 'settings' && (
           <SettingsScreen
             settings={settings}
-            study={study}
+            activeStudy={activeStudy}
             facialData={facialData}
             workerReady={workerReady}
-            onSettingsChange={(s) => {
-              setSettings(s)
-              refreshSettings()
-            }}
-            onStudyChange={(st) => {
-              setStudy(st)
-              refreshStudy()
-            }}
+            onSettingsChange={(s) => { setSettings(s); window.api.getSettings().then(setSettings) }}
             onFacialDataChange={setFacialData}
           />
         )}
+
         {screen === 'data' && (
           <DataBrowserScreen
-            settings={settings}
-            study={study}
+            study={activeStudy}
             facialData={facialData}
             workerReady={workerReady}
             onFacialDataChange={setFacialData}

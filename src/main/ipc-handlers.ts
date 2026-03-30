@@ -2,18 +2,22 @@ import { ipcMain, dialog, protocol, net, BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
-import type { Profile, RatingSavePayload, FacialProgressEvent } from '../shared/types'
+import type { Study, Profile, RatingSavePayload, FacialProgressEvent } from '../shared/types'
 import {
   getSettings,
   saveSettings,
-  getProfilesData,
+  getStudiesData,
+  saveStudy,
+  deleteStudyById,
+  getStudy,
+  getProfilesForStudy,
+  getProfile,
   saveProfile,
   deleteProfile,
-  getStudyState,
-  saveStudyState,
-  getFacialStore,
-  saveFacialStore,
+  getFacialDataForStudy,
+  getFacialRecord,
   markFacialProcessing,
+  markAllFacialProcessing,
   saveFacialResult,
   saveFacialError,
   resetFacialRecord,
@@ -78,23 +82,51 @@ export function registerIpcHandlers(): void {
   })
 
   // ---------------------------------------------------------------------------
-  // Study / image list
+  // Studies
   // ---------------------------------------------------------------------------
-  ipcMain.handle('get-study-state', () => getStudyState())
+  ipcMain.handle('get-studies', () => getStudiesData().studies)
 
-  ipcMain.handle('rescan-images', (_e, inputDirectory: string) => {
+  ipcMain.handle('create-study', (_e, { name, inputDirectory }: { name: string; inputDirectory: string }) => {
+    const now = new Date().toISOString()
     const imageList = scanImages(inputDirectory)
-    const state = {
-      imageList,
+    const study: Study = {
+      id: generateId(),
+      name: name.trim(),
       inputDirectory,
-      generatedAt: new Date().toISOString()
+      imageList,
+      generatedAt: now,
+      createdAt: now
     }
-    saveStudyState(state)
-    // Seed pending facial records for any new images
-    ensureFacialRecords(imageList)
-    return state
+    saveStudy(study)
+    ensureFacialRecords(study.id, imageList)
+    return study
   })
 
+  ipcMain.handle('rename-study', (_e, id: string, name: string) => {
+    const study = getStudy(id)
+    if (!study) return { ok: false }
+    saveStudy({ ...study, name: name.trim() })
+    return { ok: true }
+  })
+
+  ipcMain.handle('delete-study', (_e, id: string) => {
+    deleteStudyById(id)
+    return { ok: true }
+  })
+
+  ipcMain.handle('rescan-study', (_e, studyId: string) => {
+    const study = getStudy(studyId)
+    if (!study) return null
+    const imageList = scanImages(study.inputDirectory)
+    const updated: Study = { ...study, imageList, generatedAt: new Date().toISOString() }
+    saveStudy(updated)
+    ensureFacialRecords(studyId, imageList)
+    return updated
+  })
+
+  // ---------------------------------------------------------------------------
+  // Image URLs
+  // ---------------------------------------------------------------------------
   ipcMain.handle('get-image-url', (_e, inputDirectory: string, filename: string) => {
     const full = path.join(inputDirectory, filename)
     if (!fs.existsSync(full)) return null
@@ -104,11 +136,12 @@ export function registerIpcHandlers(): void {
   // ---------------------------------------------------------------------------
   // Profiles
   // ---------------------------------------------------------------------------
-  ipcMain.handle('get-profiles', () => getProfilesData().profiles)
+  ipcMain.handle('get-profiles', (_e, studyId: string) => getProfilesForStudy(studyId))
 
-  ipcMain.handle('create-profile', (_e, name: string) => {
+  ipcMain.handle('create-profile', (_e, studyId: string, name: string) => {
     const profile: Profile = {
       id: generateId(),
+      studyId,
       name: name.trim(),
       createdAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
@@ -120,11 +153,9 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('rename-profile', (_e, id: string, name: string) => {
-    const data = getProfilesData()
-    const profile = data.profiles.find((p) => p.id === id)
+    const profile = getProfile(id)
     if (!profile) return { ok: false }
-    profile.name = name.trim()
-    saveProfile(profile)
+    saveProfile({ ...profile, name: name.trim() })
     return { ok: true }
   })
 
@@ -134,19 +165,16 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('touch-profile', (_e, id: string) => {
-    const data = getProfilesData()
-    const profile = data.profiles.find((p) => p.id === id)
+    const profile = getProfile(id)
     if (!profile) return
-    profile.lastActiveAt = new Date().toISOString()
-    saveProfile(profile)
+    saveProfile({ ...profile, lastActiveAt: new Date().toISOString() })
   })
 
   // ---------------------------------------------------------------------------
-  // Rating
+  // Ratings
   // ---------------------------------------------------------------------------
   ipcMain.handle('save-rating', (_e, payload: RatingSavePayload) => {
-    const data = getProfilesData()
-    const profile = data.profiles.find((p) => p.id === payload.profileId)
+    const profile = getProfile(payload.profileId)
     if (!profile) return { ok: false }
     profile.ratings[payload.filename] = payload.rating
     profile.currentIndex = payload.newIndex
@@ -156,30 +184,25 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('update-profile-index', (_e, profileId: string, index: number) => {
-    const data = getProfilesData()
-    const profile = data.profiles.find((p) => p.id === profileId)
+    const profile = getProfile(profileId)
     if (!profile) return
-    profile.currentIndex = index
-    saveProfile(profile)
+    saveProfile({ ...profile, currentIndex: index })
   })
 
   // ---------------------------------------------------------------------------
   // Data browser mutations
   // ---------------------------------------------------------------------------
 
-  /** Reset one or more facial records back to pending. */
-  ipcMain.handle('reset-facial-data', (_e, filenames: string[]) => {
-    resetFacialRecords(filenames)
+  ipcMain.handle('reset-facial-data', (_e, studyId: string, filenames: string[]) => {
+    resetFacialRecords(studyId, filenames)
     return { ok: true }
   })
 
-  /** Delete ratings for the given images across all profiles. */
-  ipcMain.handle('delete-ratings-for-images', (_e, filenames: string[]) => {
-    deleteRatingsForImages(filenames)
+  ipcMain.handle('delete-ratings-for-images', (_e, studyId: string, filenames: string[]) => {
+    deleteRatingsForImages(studyId, filenames)
     return { ok: true }
   })
 
-  /** Overwrite a single rating value. */
   ipcMain.handle(
     'update-rating-value',
     (_e, { profileId, filename, value }: { profileId: string; filename: string; value: number }) => {
@@ -192,100 +215,60 @@ export function registerIpcHandlers(): void {
   // Facial analysis
   // ---------------------------------------------------------------------------
 
-  /** Return the entire facial data store (filename → FacialData). */
-  ipcMain.handle('get-facial-data', () => getFacialStore().records)
+  ipcMain.handle('get-facial-data', (_e, studyId: string) => getFacialDataForStudy(studyId))
 
-  /** Whether the Python worker process is ready to accept requests. */
   ipcMain.handle('get-worker-status', () => ({ ready: pythonBridge.isReady() }))
 
-  /**
-   * Process a single image.
-   * This runs synchronously from the renderer's perspective (await),
-   * but the actual Python call is async and pushed as a progress event too.
-   */
-  ipcMain.handle('process-image-facial', async (_e, filename: string, filepath: string) => {
-    if (!pythonBridge.isReady()) {
-      return { ok: false, error: 'Python worker is not ready' }
+  ipcMain.handle(
+    'process-image-facial',
+    async (_e, studyId: string, filename: string, filepath: string) => {
+      if (!pythonBridge.isReady()) return { ok: false, error: 'Python worker is not ready' }
+
+      markFacialProcessing(studyId, filename)
+      pushProgressEvent(filename, 'processing', 0, 1)
+
+      try {
+        const result = await pythonBridge.processImage(filepath)
+        saveFacialResult(studyId, filename, result.face_detected, result.sex_label, result.sex_confidence, result.metrics)
+        const record = getFacialRecord(studyId, filename)
+        pushProgressEvent(filename, 'done', 1, 1, record)
+        return { ok: true, data: record }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        saveFacialError(studyId, filename, msg)
+        const record = getFacialRecord(studyId, filename)
+        pushProgressEvent(filename, 'error', 1, 1, record)
+        return { ok: false, error: msg }
+      }
     }
+  )
 
-    markFacialProcessing(filename)
-    const totalInBatch = 1
-    pushProgressEvent(filename, 'processing', 0, totalInBatch)
-
-    try {
-      const result = await pythonBridge.processImage(filepath)
-      saveFacialResult(
-        filename,
-        result.face_detected,
-        result.sex_label,
-        result.sex_confidence,
-        result.metrics
-      )
-      const record = getFacialStore().records[filename]
-      pushProgressEvent(filename, 'done', 1, totalInBatch, record)
-      return { ok: true, data: record }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      saveFacialError(filename, msg)
-      const record = getFacialStore().records[filename]
-      pushProgressEvent(filename, 'error', 1, totalInBatch, record)
-      return { ok: false, error: msg }
-    }
-  })
-
-  /**
-   * Process many images in a single Python worker request.
-   * Returns immediately with { ok: true, total }; results are streamed back
-   * via 'facial-progress' events as each image finishes on the Python side.
-   */
   ipcMain.handle(
     'process-batch-facial',
-    (_e, items: Array<{ filename: string; filepath: string }>) => {
-      if (!pythonBridge.isReady()) {
-        return { ok: false, error: 'Python worker is not ready' }
-      }
+    (_e, items: Array<{ studyId: string; filename: string; filepath: string }>) => {
+      if (!pythonBridge.isReady()) return { ok: false, error: 'Python worker is not ready' }
 
       const total = items.length
       if (total === 0) return { ok: true, total: 0 }
 
-      // Mark all as processing up-front so the UI shows them immediately
-      const store = getFacialStore()
-      for (const { filename } of items) {
-        store.records[filename] = {
-          ...(store.records[filename] ?? {
-            filename,
-            sex_label: 'unknown',
-            sex_confidence: null,
-            face_detected: false,
-            facial_metrics_json: {},
-            processing_status: 'processing',
-            processing_error: null,
-            processed_at: null
-          }),
-          processing_status: 'processing',
-          processing_error: null
-        }
-      }
-      saveFacialStore(store)
+      // Map filename → studyId for callback lookup
+      const studyForFile = new Map(items.map((i) => [i.filename, i.studyId]))
+
+      markAllFacialProcessing(items)
 
       let completed = 0
 
       const callbacks: BatchCallbacks = {
         onItem(filename, result, error) {
           completed++
+          const studyId = studyForFile.get(filename)!
           if (result) {
-            saveFacialResult(
-              filename,
-              result.face_detected,
-              result.sex_label,
-              result.sex_confidence,
-              result.metrics
-            )
-            const record = getFacialStore().records[filename]
+            saveFacialResult(studyId, filename, result.face_detected, result.sex_label, result.sex_confidence, result.metrics)
+            const record = getFacialRecord(studyId, filename)
             pushProgressEvent(filename, 'done', completed, total, record)
           } else {
-            saveFacialError(filename, error ?? 'Unknown error')
-            const record = getFacialStore().records[filename]
+            saveFacialError(studyId, filename, error ?? 'Unknown error')
+            const record = getFacialRecord(studyId, filename)
             pushProgressEvent(filename, 'error', completed, total, record)
           }
         },
@@ -293,149 +276,173 @@ export function registerIpcHandlers(): void {
           pushToRenderer('facial-batch-complete', { total, completed })
         },
         onError(err) {
-          // Worker crashed mid-batch — mark remaining items as error
-          const remaining = getFacialStore()
-          for (const { filename } of items) {
-            if (remaining.records[filename]?.processing_status === 'processing') {
-              saveFacialError(filename, err.message)
+          for (const { studyId, filename } of items) {
+            const record = getFacialRecord(studyId, filename)
+            if (record.processing_status === 'processing') {
+              saveFacialError(studyId, filename, err.message)
             }
           }
           pushToRenderer('facial-batch-complete', { total, completed, error: err.message })
         }
       }
 
-      // One message to Python covers the entire batch
-      pythonBridge.processBatch(items, callbacks)
+      pythonBridge.processBatch(
+        items.map(({ filename, filepath }) => ({ filename, filepath })),
+        callbacks
+      )
 
       return { ok: true, total }
     }
   )
 
-  /**
-   * Reset a single image back to 'pending' and immediately reprocess it.
-   */
-  ipcMain.handle('reprocess-image-facial', async (_e, filename: string, filepath: string) => {
-    resetFacialRecord(filename)
-    // Delegate to the single-image handler logic
-    if (!pythonBridge.isReady()) {
-      return { ok: false, error: 'Python worker is not ready' }
-    }
+  ipcMain.handle(
+    'reprocess-image-facial',
+    async (_e, studyId: string, filename: string, filepath: string) => {
+      resetFacialRecord(studyId, filename)
+      if (!pythonBridge.isReady()) return { ok: false, error: 'Python worker is not ready' }
 
-    markFacialProcessing(filename)
-    pushProgressEvent(filename, 'processing', 0, 1)
+      markFacialProcessing(studyId, filename)
+      pushProgressEvent(filename, 'processing', 0, 1)
 
-    try {
-      const result = await pythonBridge.processImage(filepath)
-      saveFacialResult(
-        filename,
-        result.face_detected,
-        result.sex_label,
-        result.sex_confidence,
-        result.metrics
-      )
-      const record = getFacialStore().records[filename]
-      pushProgressEvent(filename, 'done', 1, 1, record)
-      return { ok: true, data: record }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      saveFacialError(filename, msg)
-      const record = getFacialStore().records[filename]
-      pushProgressEvent(filename, 'error', 1, 1, record)
-      return { ok: false, error: msg }
+      try {
+        const result = await pythonBridge.processImage(filepath)
+        saveFacialResult(studyId, filename, result.face_detected, result.sex_label, result.sex_confidence, result.metrics)
+        const record = getFacialRecord(studyId, filename)
+        pushProgressEvent(filename, 'done', 1, 1, record)
+        return { ok: true, data: record }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        saveFacialError(studyId, filename, msg)
+        const record = getFacialRecord(studyId, filename)
+        pushProgressEvent(filename, 'error', 1, 1, record)
+        return { ok: false, error: msg }
+      }
     }
-  })
+  )
 
   // ---------------------------------------------------------------------------
   // Export
   // ---------------------------------------------------------------------------
-  ipcMain.handle('export-csv', async (_e, outputDirectory: string) => {
-    const study = getStudyState()
-    if (!study) return { ok: false, error: 'No study data found. Please scan an image directory first.' }
+  ipcMain.handle(
+    'export-csv',
+    async (_e, { studyIds, outputDirectory }: { studyIds: string[]; outputDirectory: string }) => {
+      if (studyIds.length === 0) return { ok: false, error: 'No studies selected.' }
 
-    const settings = getSettings()
-    const profiles = getProfilesData().profiles
-    if (profiles.length === 0) return { ok: false, error: 'No profiles found.' }
+      const allStudies = studyIds.map((id) => getStudy(id)).filter((s): s is Study => s !== undefined)
+      if (allStudies.length === 0) return { ok: false, error: 'Studies not found.' }
+      const isSingle = allStudies.length === 1
+      const settings = getSettings()
+      const defaultName = isSingle
+        ? `${allStudies[0].name}_export_${Date.now()}.csv`
+        : `combined_export_${Date.now()}.csv`
 
-    const facialRecords = getFacialStore().records
+      const { filePath: savePath, canceled } = await dialog.showSaveDialog({
+        defaultPath: path.join(outputDirectory || settings.outputDirectory, defaultName),
+        filters: [{ name: 'CSV', extensions: ['csv'] }]
+      })
+      if (canceled || !savePath) return { ok: false, error: 'Export canceled.' }
 
-    const { filePath: savePath, canceled } = await dialog.showSaveDialog({
-      defaultPath: path.join(outputDirectory, `ratings_export_${Date.now()}.csv`),
-      filters: [{ name: 'CSV', extensions: ['csv'] }]
-    })
-    if (canceled || !savePath) return { ok: false, error: 'Export canceled.' }
+      // Long-format (works for both single and multi-study)
+      const longHeaders = ['study_id', 'study_name', 'filepath', 'filename', 'participant', 'rating']
+      const longRows: string[] = [longHeaders.map(quoteCsv).join(',')]
 
-    // Collect all flattened metric keys across all records for consistent columns
-    const metricKeys = collectMetricKeys(study.imageList, facialRecords)
+      // Wide-format (one row per image)
+      // Collect all participants across selected studies
+      const allProfiles: Profile[] = []
+      for (const study of allStudies) {
+        allProfiles.push(...getProfilesForStudy(study.id))
+      }
 
-    // --- Wide-format CSV ---
-    const participantNames = profiles.map((p) => p.name)
-    const facialColumns = [
-      'sex_label',
-      'sex_confidence',
-      'face_detected',
-      'processing_status',
-      ...metricKeys
-    ]
-    const headers = [
-      'filepath',
-      'filename',
-      'mean_rating',
-      'n_raters',
-      ...participantNames.map((n) => `participant_${n.replace(/[^a-zA-Z0-9_]/g, '_')}`),
-      ...facialColumns
-    ]
+      const metricKeysSet = new Set<string>()
+      for (const study of allStudies) {
+        const fd = getFacialDataForStudy(study.id)
+        collectMetricKeys(study.imageList, fd).forEach((k) => metricKeysSet.add(k))
+      }
+      const metricKeys = Array.from(metricKeysSet).sort()
 
-    const rows: string[] = [headers.map(quoteCsv).join(',')]
+      const facialColumns = ['sex_label', 'sex_confidence', 'face_detected', 'processing_status', ...metricKeys]
 
-    for (const filename of study.imageList) {
-      const filepath = path.join(settings.inputDirectory, filename)
-      const fileExists = fs.existsSync(filepath)
-      const individualRatings = profiles.map((p) => p.ratings[filename] ?? null)
-      const rated = individualRatings.filter((r): r is number => r !== null)
-      const mean = rated.length > 0 ? (rated.reduce((a, b) => a + b, 0) / rated.length).toFixed(4) : ''
+      // Wide-format participant columns prefixed with study name when multi-study
+      const participantCols = allProfiles.map((p) => {
+        const study = allStudies.find((s) => s.id === p.studyId)!
+        const colName = isSingle
+          ? `participant_${p.name.replace(/[^a-zA-Z0-9_]/g, '_')}`
+          : `${study.name.replace(/[^a-zA-Z0-9_]/g, '_')}_${p.name.replace(/[^a-zA-Z0-9_]/g, '_')}`
+        return { profile: p, colName }
+      })
 
-      const fd = facialRecords[filename]
-      const facialValues = [
-        fd?.sex_label ?? '',
-        fd?.sex_confidence != null ? String(fd.sex_confidence) : '',
-        fd ? String(fd.face_detected) : '',
-        fd?.processing_status ?? 'pending',
-        ...metricKeys.map((k) => {
-          const v = fd?.facial_metrics_json?.[k]
-          return v != null ? String(v) : ''
-        })
+      const wideHeaders = [
+        'study_id',
+        'study_name',
+        'filepath',
+        'filename',
+        'mean_rating',
+        'n_raters',
+        ...participantCols.map((c) => c.colName),
+        ...facialColumns
       ]
+      const wideRows: string[] = [wideHeaders.map(quoteCsv).join(',')]
 
-      const row = [
-        fileExists ? filepath : filepath + ' [MISSING]',
-        filename,
-        mean,
-        String(rated.length),
-        ...individualRatings.map((r) => (r !== null ? String(r) : '')),
-        ...facialValues
-      ]
-      rows.push(row.map(quoteCsv).join(','))
-    }
+      for (const study of allStudies) {
+        const fd = getFacialDataForStudy(study.id)
+        const studyProfiles = allProfiles.filter((p) => p.studyId === study.id)
 
-    // --- Long-format CSV ---
-    const longHeaders = ['filepath', 'filename', 'participant', 'rating']
-    const longRows: string[] = [longHeaders.map(quoteCsv).join(',')]
-    for (const filename of study.imageList) {
-      const filepath = path.join(settings.inputDirectory, filename)
-      for (const profile of profiles) {
-        const rating = profile.ratings[filename]
-        if (rating !== undefined) {
-          longRows.push([filepath, filename, profile.name, String(rating)].map(quoteCsv).join(','))
+        for (const filename of study.imageList) {
+          const filepath = path.join(study.inputDirectory, filename)
+          const fileExists = fs.existsSync(filepath)
+
+          // Long format rows
+          for (const profile of studyProfiles) {
+            const rating = profile.ratings[filename]
+            if (rating !== undefined) {
+              longRows.push(
+                [study.id, study.name, fileExists ? filepath : filepath + ' [MISSING]', filename, profile.name, String(rating)]
+                  .map(quoteCsv)
+                  .join(',')
+              )
+            }
+          }
+
+          // Wide format row
+          const individualRatings = allProfiles.map((p) =>
+            p.studyId === study.id ? (p.ratings[filename] ?? null) : null
+          )
+          const rated = individualRatings.filter((r): r is number => r !== null)
+          const mean = rated.length > 0 ? (rated.reduce((a, b) => a + b, 0) / rated.length).toFixed(4) : ''
+
+          const facialRec = fd[filename]
+          const facialValues = [
+            facialRec?.sex_label ?? '',
+            facialRec?.sex_confidence != null ? String(facialRec.sex_confidence) : '',
+            facialRec ? String(facialRec.face_detected) : '',
+            facialRec?.processing_status ?? 'pending',
+            ...metricKeys.map((k) => {
+              const v = facialRec?.facial_metrics_json?.[k]
+              return v != null ? String(v) : ''
+            })
+          ]
+
+          const wideRow = [
+            study.id,
+            study.name,
+            fileExists ? filepath : filepath + ' [MISSING]',
+            filename,
+            mean,
+            String(rated.length),
+            ...individualRatings.map((r) => (r !== null ? String(r) : '')),
+            ...facialValues
+          ]
+          wideRows.push(wideRow.map(quoteCsv).join(','))
         }
       }
+
+      fs.writeFileSync(savePath, wideRows.join('\n'), 'utf-8')
+      const longPath = savePath.replace(/\.csv$/i, '_long.csv')
+      fs.writeFileSync(longPath, longRows.join('\n'), 'utf-8')
+
+      return { ok: true, path: savePath, longPath }
     }
-
-    fs.writeFileSync(savePath, rows.join('\n'), 'utf-8')
-    const longPath = savePath.replace(/\.csv$/i, '_long.csv')
-    fs.writeFileSync(longPath, longRows.join('\n'), 'utf-8')
-
-    return { ok: true, path: savePath, longPath }
-  })
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -453,10 +460,6 @@ function pushProgressEvent(
   pushToRenderer('facial-progress', event)
 }
 
-/**
- * Collect a stable, sorted list of all metric keys across all processed images.
- * Only uses images that are 'done' to avoid half-filled columns.
- */
 function collectMetricKeys(
   imageList: string[],
   facialRecords: Record<string, { facial_metrics_json?: Record<string, unknown>; processing_status?: string }>
@@ -465,9 +468,7 @@ function collectMetricKeys(
   for (const filename of imageList) {
     const fd = facialRecords[filename]
     if (fd?.processing_status === 'done' && fd.facial_metrics_json) {
-      for (const k of Object.keys(fd.facial_metrics_json)) {
-        keySet.add(k)
-      }
+      for (const k of Object.keys(fd.facial_metrics_json)) keySet.add(k)
     }
   }
   return Array.from(keySet).sort()

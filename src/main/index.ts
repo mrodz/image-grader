@@ -2,6 +2,7 @@ import { app, BrowserWindow, protocol } from 'electron'
 import path from 'path'
 import { registerIpcHandlers, registerProtocol } from './ipc-handlers'
 import { pythonBridge } from './python-bridge'
+import { runMigrations } from './store'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -35,6 +36,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.whenReady().then(() => {
+  runMigrations()
   registerProtocol()
   registerIpcHandlers()
   createWindow()
