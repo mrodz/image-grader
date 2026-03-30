@@ -1,0 +1,195 @@
+import { useState, useEffect, useRef } from 'react'
+import type { Profile, AppSettings, StudyState } from '../types'
+
+interface Props {
+  settings: AppSettings
+  study: StudyState | null
+  onSelectProfile: (profile: Profile) => void
+  onGoSettings: () => void
+}
+
+export default function ProfileScreen({ settings, study, onSelectProfile, onGoSettings }: Props) {
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [newName, setNewName] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const newNameRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    loadProfiles()
+  }, [])
+
+  async function loadProfiles() {
+    const ps = await window.api.getProfiles()
+    setProfiles(ps)
+  }
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const name = newName.trim()
+    if (!name) return
+    const profile = await window.api.createProfile(name)
+    setProfiles((prev) => [...prev, profile])
+    setNewName('')
+    newNameRef.current?.focus()
+  }
+
+  async function handleRename(id: string) {
+    const name = renameValue.trim()
+    if (!name) return
+    await window.api.renameProfile(id, name)
+    setProfiles((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)))
+    setRenamingId(null)
+  }
+
+  async function handleDelete(id: string) {
+    await window.api.deleteProfile(id)
+    setProfiles((prev) => prev.filter((p) => p.id !== id))
+    setDeletingId(null)
+  }
+
+  function progressFor(profile: Profile): { rated: number; total: number; pct: number } {
+    const total = study?.imageList.length ?? 0
+    const rated = Object.keys(profile.ratings).length
+    const pct = total > 0 ? Math.round((rated / total) * 100) : 0
+    return { rated, total, pct }
+  }
+
+  const hasDirectory = !!settings.inputDirectory
+  const hasImages = (study?.imageList.length ?? 0) > 0
+
+  return (
+    <div className="profile-screen">
+      <div className="profile-header">
+        <h1>Select Participant</h1>
+        {!hasDirectory && (
+          <div className="warn-banner">
+            No image directory set.{' '}
+            <button className="link-btn" onClick={onGoSettings}>
+              Open Settings
+            </button>{' '}
+            to configure one.
+          </div>
+        )}
+        {hasDirectory && !hasImages && (
+          <div className="warn-banner">
+            Directory is set but no images were found.{' '}
+            <button className="link-btn" onClick={onGoSettings}>
+              Rescan in Settings
+            </button>
+          </div>
+        )}
+        {hasImages && (
+          <p className="study-info">
+            {study!.imageList.length} images in study
+          </p>
+        )}
+      </div>
+
+      <div className="profile-list">
+        {profiles.length === 0 && (
+          <p className="empty-hint">No profiles yet. Create one below.</p>
+        )}
+        {profiles.map((profile) => {
+          const { rated, total, pct } = progressFor(profile)
+          const isDone = total > 0 && rated >= total
+
+          return (
+            <div
+              key={profile.id}
+              className={`profile-card${isDone ? ' done' : ''}`}
+            >
+              {renamingId === profile.id ? (
+                <form
+                  className="rename-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    handleRename(profile.id)
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    className="input"
+                  />
+                  <button type="submit" className="btn btn-sm">Save</button>
+                  <button type="button" className="btn-ghost btn-sm" onClick={() => setRenamingId(null)}>
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <div className="profile-info">
+                    <button
+                      className="profile-name-btn"
+                      onClick={() => onSelectProfile(profile)}
+                      disabled={!hasImages}
+                      title={!hasImages ? 'No images to rate' : undefined}
+                    >
+                      {profile.name}
+                      {isDone && <span className="badge-done">Complete</span>}
+                    </button>
+                    <div className="profile-progress">
+                      <div className="progress-bar">
+                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="progress-label">
+                        {rated}/{total} rated{total > 0 ? ` (${pct}%)` : ''}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="profile-actions">
+                    {deletingId === profile.id ? (
+                      <>
+                        <span className="danger-label">Delete?</span>
+                        <button className="btn-danger btn-sm" onClick={() => handleDelete(profile.id)}>
+                          Yes, delete
+                        </button>
+                        <button className="btn-ghost btn-sm" onClick={() => setDeletingId(null)}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          className="btn-ghost btn-sm"
+                          onClick={() => {
+                            setRenamingId(profile.id)
+                            setRenameValue(profile.name)
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          className="btn-ghost btn-sm danger"
+                          onClick={() => setDeletingId(profile.id)}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <form className="create-form" onSubmit={handleCreate}>
+        <input
+          ref={newNameRef}
+          className="input"
+          placeholder="New participant name…"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+        />
+        <button type="submit" className="btn" disabled={!newName.trim()}>
+          Create Profile
+        </button>
+      </form>
+    </div>
+  )
+}
