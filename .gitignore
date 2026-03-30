@@ -5,3 +5,5 @@ dist-electron/
 
 **/__pycache__
 **/venv
+
+src/python/data
