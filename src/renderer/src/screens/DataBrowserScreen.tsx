@@ -244,7 +244,7 @@ export default function DataBrowserScreen({ study, facialData, workerReady, onFa
                   <td className="db-td">
                     {fd?.sex_label && fd.sex_label !== 'unknown' ? (
                       <span className={`db-sex-badge db-sex-${fd.sex_label}`}>
-                        {fd.sex_label === 'male' ? 'M' : 'F'}
+                        {fd.sex_label === 'male' ? 'M' : fd.sex_label === 'female' ? 'F' : '?'}
                       </span>
                     ) : <span className="db-muted">—</span>}
                   </td>

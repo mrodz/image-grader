@@ -203,11 +203,13 @@ def _classify_sex_v2(image_bgr: np.ndarray, model) -> tuple[str, float]:
     img = np.expand_dims(img, axis=0)
     
     try:
-        labels = ["Woman", "Man"]
-
         preds = model.predict(img)
-        idx = np.argmax(preds)
-        return labels[idx], preds[idx]
+        idx = int(np.argmax(preds))
+        # DeepFace gender model: index 0 = Woman, index 1 = Man
+        label = "female" if idx == 0 else "male"
+        flat = np.array(preds).flatten()
+        confidence = float(flat[idx])
+        return label, confidence
 
     except ValueError as e:
         # This will trigger if enforce_detection=True and absolutely zero faces are found
