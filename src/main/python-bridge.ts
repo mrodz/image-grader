@@ -77,7 +77,7 @@ class PythonBridge {
 
   private workerPath(): string {
     if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'python', 'worker.py')
+      return path.join(process.resourcesPath, 'worker.py')
     }
     return path.join(__dirname, '..', '..', 'src', 'python', 'worker.py')
   }
@@ -93,9 +93,9 @@ class PythonBridge {
     if (app.isPackaged) {
       console.log("PACKAGED")
       if (process.platform === 'win32') {
-        return path.join(process.resourcesPath, 'python', 'venv', 'Scripts', 'python.exe')
+        return path.join(process.resourcesPath, 'venv', 'Scripts', 'python.exe')
       }
-      return path.join(process.resourcesPath, 'python', 'venv', 'bin', 'python')
+      return path.join(process.resourcesPath, 'venv', 'bin', 'python')
     }
 
     console.log("NOT PACKAGED")
