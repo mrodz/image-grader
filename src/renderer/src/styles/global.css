@@ -522,6 +522,82 @@ input:focus {
   outline: none;
 }
 
+/* ---- Rating Histogram ---- */
+.hist-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px 10px;
+  margin-bottom: 20px;
+}
+
+.hist-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.hist-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hist-subtitle {
+  font-size: 12px;
+  color: var(--text2);
+}
+
+.hist-svg {
+  width: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.hist-bar {
+  fill: var(--accent);
+  opacity: 0.75;
+  transition: opacity 0.1s;
+}
+
+.hist-bar:hover { opacity: 1; }
+
+.hist-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.hist-axis-line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.hist-axis-label {
+  font-size: 10px;
+  fill: var(--text2);
+  font-family: var(--font);
+}
+
+.hist-bar-count {
+  font-size: 9px;
+  fill: rgba(232, 232, 232, 0.7);
+  font-family: var(--font);
+  pointer-events: none;
+}
+
+.hist-mean-line {
+  stroke: var(--warn);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.hist-mean-label {
+  font-size: 9px;
+  fill: var(--warn);
+  font-family: var(--font);
+}
+
 /* ---- Rating Screen ---- */
 .rating-screen {
   display: flex;
